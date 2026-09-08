@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "kairos.insomnia",
+  "name": "Insomnia",
+  "version": "1.0.0",
+  "author": "kairos",
+  "license": "MIT",
+  "description": "Keeps the machine awake and on the network so long-running agent sessions survive. Holds a logind sleep/idle inhibitor for a chosen duration, with optional lid-close and screen-lock suppression and a gateway keepalive.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Insomnia",
+    "description": "Keep-awake toggle: blocks suspend and idle so agent sessions keep running.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

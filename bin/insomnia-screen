@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Holds omarchy's stay-awake indicator behind a random claim id, so releasing it
+# never clears a stay-awake that something else turned on.
+set -u
+
+state_dir="$HOME/.local/state/omarchy/indicators"
+state_file="$state_dir/stay-awake"
+claim_cap=64
+
+emit() { printf '{"held":%s,"owner":"%s"}\n' "$1" "$2"; }
+
+valid_claim() {
+  case "$1" in
+    ""|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  [ "${#1}" -ge 8 ] && [ "${#1}" -le "$claim_cap" ]
+}
+
+# One bounded read on a no-follow descriptor, at cap+1 so an oversized file is
+# refused rather than accepted by its prefix. Empty covers absent, symlink,
+# FIFO and unreadable alike, and all four mean "not ours".
+read_claim() {
+  local raw
+  raw=$(dd if="$state_file" iflag=nofollow,nonblock bs=$((claim_cap + 1)) count=1 \
+          status=none 2>/dev/null | tr -d '\r\n')
+  [ "${#raw}" -le "$claim_cap" ] || return 0
+  printf '%s' "$raw"
+}
+
+# The directory has to be ours and not a symlink before anything is created in
+# it, or a planted link redirects the chmod and the rename.
+ensure_dir() {
+  mkdir -m 700 -p -- "$state_dir" || return 1
+  [ -d "$state_dir" ] && [ ! -L "$state_dir" ] && [ -O "$state_dir" ]
+}
+
+# Written through a temp file in the same directory: `>` would follow a symlink
+# planted at the destination, `mv -f` replaces it instead.
+write_claim() {
+  local tmp
+  tmp=$(mktemp "$state_dir/.stay-awake.XXXXXXXX") || return 1
+  chmod 600 -- "$tmp" || { rm -f -- "$tmp"; return 1; }
+  printf '%s\n' "$1" >"$tmp" || { rm -f -- "$tmp"; return 1; }
+  mv -f -- "$tmp" "$state_file" || { rm -f -- "$tmp"; return 1; }
+}
+
+hold() {
+  valid_claim "$1" || exit 2
+  ensure_dir || exit 1
+
+  local current
+  current=$(read_claim)
+  if [ -n "$current" ] && [ "$current" != "$1" ]; then
+    emit true other
+    exit 0
+  fi
+
+  # An existing but empty file means somebody used `omarchy toggle idle`
+  # directly; leave their state alone rather than adopting it.
+  if [ -z "$current" ] && [ -e "$state_file" ]; then
+    emit true other
+    exit 0
+  fi
+
+  omarchy-toggle-idle stay-awake >/dev/null 2>&1 || exit 1
+  write_claim "$1" || exit 1
+  emit true self
+}
+
+release() {
+  valid_claim "$1" || exit 2
+  local current
+  current=$(read_claim)
+  if [ "$current" != "$1" ]; then
+    if [ -e "$state_file" ]; then emit true other; else emit false none; fi
+    exit 0
+  fi
+  omarchy-toggle-idle allow-idle >/dev/null 2>&1 || exit 1
+  emit false self
+}
+
+status() {
+  local current
+  if ! valid_claim "${1:-}"; then
+    if [ -e "$state_file" ]; then emit true other; else emit false none; fi
+    exit 0
+  fi
+  current=$(read_claim)
+  if [ "$current" = "$1" ]; then emit true self
+  elif [ -e "$state_file" ]; then emit true other
+  else emit false none
+  fi
+}
+
+# Captured rather than piped, so the helper's own exit code survives; the cap
+# keeps that true if a field is ever added to the emitted line.
+result=""
+case "${1:-}" in
+  hold) result=$(hold "${2:-}"); rc=$? ;;
+  release) result=$(release "${2:-}"); rc=$? ;;
+  status) result=$(status "${2:-}"); rc=$? ;;
+  *) echo "Usage: insomnia-screen <hold|release|status> <claim-id>" >&2; exit 2 ;;
+esac
+
+printf '%s\n' "${result:0:256}"
+exit "$rc"

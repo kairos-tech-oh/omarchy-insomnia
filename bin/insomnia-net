@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# One network probe, printed as a single JSON line: default route, Wi-Fi power
+# save, and an optional keepalive ping for APs that drop idle clients.
+set -u
+
+want_ping="${1:-noping}"
+route_cap=512
+iw_cap=128
+
+gateway=""
+iface=""
+powersave="unknown"
+ping_result="skipped"
+
+# Bounded at the producer, at cap+1 so an oversized first line is refused rather
+# than parsed from its prefix. Row cap and byte cap both, both failing closed.
+route=$(timeout 3 ip -4 route show default 2>/dev/null \
+          | head -n 1 | head -c $((route_cap + 1)))
+[ "${#route}" -le "$route_cap" ] || route=""
+
+if [ -n "$route" ]; then
+  gateway=$(printf '%s\n' "$route" | awk '{for (i = 1; i < NF; i++) if ($i == "via") { print $(i + 1); exit }}')
+  iface=$(printf '%s\n' "$route" | awk '{for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit }}')
+fi
+
+# Whitelist both before either is printed or handed to another command.
+printf '%s' "$gateway" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || gateway=""
+case "$iface" in
+  ""|*[!A-Za-z0-9._-]*) iface="" ;;
+  *) [ "${#iface}" -le 15 ] || iface="" ;;
+esac
+
+if [ -n "$iface" ] && command -v iw >/dev/null 2>&1; then
+  saving=$(timeout 3 iw dev "$iface" get power_save 2>/dev/null | head -c $((iw_cap + 1)))
+  if [ "${#saving}" -le "$iw_cap" ]; then
+    case "$saving" in
+      *"Power save: on"*) powersave="on" ;;
+      *"Power save: off"*) powersave="off" ;;
+    esac
+  fi
+fi
+
+if [ "$want_ping" = "ping" ] && [ -n "$gateway" ]; then
+  if timeout 6 ping -n -q -c 1 -w 3 -- "$gateway" >/dev/null 2>&1; then
+    ping_result="ok"
+  else
+    ping_result="fail"
+  fi
+fi
+
+# Every field is a literal or whitelisted above, so the line is well under the
+# cap; the cap keeps that true if a field is ever added.
+line=$(printf '{"gateway":"%s","iface":"%s","powersave":"%s","ping":"%s"}' \
+         "$gateway" "$iface" "$powersave" "$ping_result")
+printf '%s\n' "${line:0:512}"
