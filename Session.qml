@@ -57,6 +57,7 @@ Item {
     var ms = Format.durationMs(chosen)
     root.now = Date.now()
     root.inhibitorFailed = false
+    root.inhibitorRetries = 0
     cfg.setAll({ "active": true, "duration": chosen, "expiresAt": ms > 0 ? root.now + ms : 0 })
   }
 
@@ -126,9 +127,33 @@ Item {
     inhibitor.running = true
   }
 
+  property string inhibitorError: ""
+
+  // A refusal is often transient (a locked session, a shell restart). Retry with
+  // backoff instead of staying failed until the user toggles by hand.
+  property int inhibitorRetries: 0
+  readonly property int inhibitorMaxRetries: 8
+
+  Timer {
+    id: inhibitorRetry
+    repeat: false
+    interval: Math.min(60000, 2000 * Math.pow(2, Math.max(0, root.inhibitorRetries - 1)))
+    onTriggered: root.syncInhibitor()
+  }
+
   Process {
     id: inhibitor
     running: false
+
+    // Held again: clear the failure so the bar goes back to green.
+    onStarted: root.inhibitorFailed = false
+
+    // Without this the refusal reason is discarded and the failure is
+    // undiagnosable from the log.
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.inhibitorError = Format.barSafe(text, 200)
+    }
 
     onExited: function (exitCode) {
       if (root.inhibitorRestarting) {
@@ -139,7 +164,14 @@ Item {
       // Gone while still wanted: report it rather than respawning into a loop.
       if (root.active && root.primary) {
         root.inhibitorFailed = true
-        console.warn("insomnia: sleep inhibitor exited", exitCode)
+        console.warn("insomnia: sleep inhibitor exited", exitCode, root.inhibitorError)
+        if (root.inhibitorRetries < root.inhibitorMaxRetries) {
+          root.inhibitorRetries++
+          inhibitorRetry.restart()
+        } else {
+          console.warn("insomnia: giving up on the sleep inhibitor after",
+                       root.inhibitorRetries, "attempts")
+        }
       }
     }
   }

@@ -19,6 +19,11 @@ Panel {
 
   readonly property bool live: session !== null && session.ready
 
+  // Same on/off palette as the bar glyph, so a green switch and a green glyph
+  // mean the same thing.
+  readonly property color onColor: "#3fb950"
+  readonly property color offColor: Color.muted
+
   function openFromHotkey() { root.open() }
 
   onOpenedChanged: if (opened && session) session.probeNetwork()
@@ -99,8 +104,10 @@ Panel {
 
           PanelSectionHeader { text: "Session"; foreground: Color.popups.text }
 
-          Toggle {
+          StatusToggle {
             width: parent.width
+            onColor: root.onColor
+            offColor: root.offColor
             label: "Keep this machine awake"
             description: "Holds a logind block inhibitor on sleep and idle, so suspend cannot interrupt a running agent."
             checked: root.live && root.session.active
@@ -133,16 +140,20 @@ Panel {
 
           PanelSectionHeader { text: "What stays awake"; foreground: Color.popups.text }
 
-          Toggle {
+          StatusToggle {
             width: parent.width
+            onColor: root.onColor
+            offColor: root.offColor
             label: "Ignore the lid closing"
             description: "Adds handle-lid-switch to the inhibitor. A closed laptop that never suspends can get very hot in a bag — leave this off unless the machine is on a desk."
             checked: root.live && root.session.inhibitLid
             onClicked: if (root.live) root.session.setFlag("inhibitLid", !root.session.inhibitLid)
           }
 
-          Toggle {
+          StatusToggle {
             width: parent.width
+            onColor: root.onColor
+            offColor: root.offColor
             label: "Keep the screen on"
             description: "Holds omarchy's stay-awake indicator, which suppresses the screensaver and the idle lock. Agent sessions do not need this — the lock does not stop them."
             checked: root.live && root.session.keepScreenOn
@@ -165,8 +176,10 @@ Panel {
 
           PanelSectionHeader { text: "Network"; foreground: Color.popups.text }
 
-          Toggle {
+          StatusToggle {
             width: parent.width
+            onColor: root.onColor
+            offColor: root.offColor
             label: "Ping the gateway every 4 min"
             description: "Blocking suspend already keeps the link up. This only helps against an access point that drops clients it has not heard from."
             checked: root.live && root.session.keepalive

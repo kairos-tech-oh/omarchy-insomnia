@@ -10,6 +10,11 @@ holding it awake, with the remaining time beside it when the session is timed.
 - **Left click** toggles the session on and off.
 - **Right click** opens the settings popup.
 
+The glyph is green while the inhibitor is actually held and gray when the
+machine will sleep normally. It turns the theme's urgent colour, with a `!`
+beside it, if logind refused the inhibitor. The switches in the settings popup
+follow the same green-on/gray-off palette.
+
 ## What it actually does
 
 Three separate things stop an unattended session, and Insomnia addresses them
@@ -35,6 +40,13 @@ You can see it while it is held:
 ```
 systemd-inhibit --list
 ```
+
+If logind refuses the inhibitor, or it dies while the session is still on,
+Insomnia retries with exponential backoff (2s doubling to a 60s ceiling, eight
+attempts) rather than staying failed until you toggle it by hand. A refusal is
+usually transient — a locked session, or a shell restart mid-flight. The
+refusal reason from `systemd-inhibit` is logged, so
+`journalctl --user | grep insomnia` says why.
 
 ### The lid (optional, off by default)
 

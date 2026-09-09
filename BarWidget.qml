@@ -49,6 +49,10 @@ BarWidget {
 
   readonly property string glyph: session.active ? "󰒳" : "󰒲"
 
+  // Green while the inhibitor is actually held; urgent if logind refused it.
+  readonly property color onColor: session.inhibitorFailed ? Color.urgent : "#3fb950"
+  readonly property color offColor: Color.muted
+
   readonly property string labelText: {
     if (!session.active) return glyph
     if (session.inhibitorFailed) return glyph + " !"
@@ -112,6 +116,8 @@ BarWidget {
       text: Format.barSafe(root.labelText, 24)
       tooltipText: Format.barSafe(root.tooltip, 240)
       active: session.active
+      foreground: root.offColor
+      activeColor: root.onColor
       hasVisualContent: true
       labelVisible: true
       onPressed: function (mouseButton) {
